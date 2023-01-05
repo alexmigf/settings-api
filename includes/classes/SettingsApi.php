@@ -847,7 +847,7 @@ class SettingsApi {
 	 * @return void
 	 */
 	public function admin_page() {
-		echo '<div class="wrap '.$this->slug.'-wrap">';
+		echo '<div class="wrap '.$this->slug.'-wrap admin-page">';
 		echo '<h1 id="'.$this->slug.'-title">' . $this->page_title . '</h1>';
 		if ( ! empty( $this->callback ) && is_callable( $this->callback ) ) {
 			call_user_func( $this->callback );
@@ -866,7 +866,7 @@ class SettingsApi {
 	public function submenu_page() {
 		$submenu = $this->get_current_submenu();
 		if ( ! empty( $submenu ) ) {
-			echo '<div class="wrap '.$submenu['menu_slug'].'-wrap">';
+			echo '<div class="wrap '.$submenu['menu_slug'].'-wrap submenu-page">';
 			echo '<h1 id="'.$submenu['menu_slug'].'-title">' . $submenu['menu_title'] . '</h1>';
 			if ( ! empty( $submenu['callback'] ) && is_callable( $submenu['callback'] ) ) {
 				call_user_func( $submenu['callback'] );
@@ -964,8 +964,8 @@ class SettingsApi {
 		}
 
 		foreach ( $this->submenus_array as $submenu ) {
-			$submenu_page_id = "{$screen->parent_base}_page_{$submenu['menu_slug']}";
-			if ( $screen->id == $submenu_page_id ) {
+			$submenu_page_id = "_page_{$submenu['menu_slug']}";
+			if ( strpos( $screen->id, $submenu_page_id ) !== false ) {
 				$current_submenu = $submenu;
 			}
 		}
