@@ -48,6 +48,13 @@ class SettingsApi {
 	private $slug;
 
 	/**
+	 * Custom callback for the settings page.
+	 *
+	 * @var array
+	 */
+	private $callback;
+
+	/**
 	 * Menu position for the settings page.
 	 *
 	 * @var int|null
@@ -92,13 +99,14 @@ class SettingsApi {
 	 * @param int|null $position    Menu position for the settings page.
 	 * @param bool     $top_level   If it's a top level menu.
 	 */
-	public function __construct( $page_title, $menu_title, $capability, $slug, $position = null, $top_level = false, $icon_url = '' ) {
+	public function __construct( $page_title, $menu_title, $capability, $slug, $callback = [], $position = null, $top_level = false, $icon_url = '' ) {
 
 		// Set variables.
 		$this->page_title = esc_attr( $page_title );
 		$this->menu_title = esc_attr( $menu_title );
 		$this->capability = esc_attr( $capability );
 		$this->slug       = esc_attr( $slug );
+		$this->callback   = $callback;
 		$this->position   = ! empty( $position ) ? intval( $position ) : null;
 		$this->top_level  = $top_level;
 		$this->icon_url   = esc_attr( $icon_url );
@@ -767,7 +775,7 @@ class SettingsApi {
 				$this->menu_title,
 				$this->capability,
 				$this->slug,
-				[ $this, 'plugin_page' ],
+				[ $this, 'admin_page' ],
 				$this->icon_url,
 				$this->position,
 			);
@@ -777,7 +785,7 @@ class SettingsApi {
 				$this->menu_title,
 				$this->capability,
 				$this->slug,
-				[ $this, 'plugin_page' ],
+				[ $this, 'admin_page' ],
 				$this->position,
 			);
 		}
@@ -793,8 +801,8 @@ class SettingsApi {
 	 * @param int|null  $position
 	 * @param bool      $use_parent_slug
 	 */
-	public function set_submenu( $page_title, $menu_title, $menu_slug, $callback, $position = null, $use_parent_slug = true ) {
-		if ( empty( $page_title ) || empty( $menu_title ) || empty( $menu_slug ) || empty( $callback ) || ! is_array( $callback ) ) {
+	public function set_submenu( $page_title, $menu_title, $menu_slug, $callback = [], $position = null, $use_parent_slug = true ) {
+		if ( empty( $page_title ) || empty( $menu_title ) || empty( $menu_slug ) ) {
 			return;
 		}
 
@@ -827,23 +835,47 @@ class SettingsApi {
 				$submenu['menu_title'],
 				$this->capability,
 				$submenu['menu_slug'],
-				$submenu['callback'],
+				[ $this, 'submenu_page' ],
 				$submenu['position']
 			);
 		}
 	}
 
 	/**
-	 * Renders the settings page.
+	 * Renders the admin page.
 	 *
 	 * @return void
 	 */
-	public function plugin_page() {
+	public function admin_page() {
 		echo '<div class="wrap '.$this->slug.'-wrap">';
 		echo '<h1 id="'.$this->slug.'-title">' . $this->page_title . '</h1>';
-		$this->show_navigation();
-		$this->show_forms();
+		if ( ! empty( $this->callback ) && is_callable( $this->callback ) ) {
+			call_user_func( $this->callback );
+		} else {
+			$this->show_navigation();
+			$this->show_forms();
+		}
 		echo '</div>';
+	}
+
+	/**
+	 * Renders a submenu page.
+	 *
+	 * @return void
+	 */
+	public function submenu_page() {
+		$submenu = $this->get_current_submenu();
+		if ( ! empty( $submenu ) ) {
+			echo '<div class="wrap '.$submenu['menu_slug'].'-wrap">';
+			echo '<h1 id="'.$submenu['menu_slug'].'-title">' . $submenu['menu_title'] . '</h1>';
+			if ( ! empty( $submenu['callback'] ) && is_callable( $submenu['callback'] ) ) {
+				call_user_func( $submenu['callback'] );
+			} else {
+				$this->show_navigation( $submenu );
+				$this->show_forms( $submenu );
+			}
+			echo '</div>';
+		}
 	}
 
 	/**
@@ -851,13 +883,20 @@ class SettingsApi {
 	 *
 	 * Shows all the settings section labels as tabs.
 	 *
+	 * @param array $submenu
+	 *
 	 * @return void
 	 */
-	public function show_navigation() {
+	public function show_navigation( $submenu = [] ) {
 		$html = '<h2 class="nav-tab-wrapper '.$this->slug.'-nav">';
 
-		foreach ( $this->sections_array as $tab ) {
-			$html .= sprintf( '<a href="#%1$s" class="nav-tab" id="%1$s-tab">%2$s</a>', $tab['id'], $tab['title'] );
+		$sections = ! empty( $submenu ) ? $this->get_submenu_sections( $submenu ) : $this->sections_array;
+
+		foreach ( $sections as $section ) {
+			if ( empty( $submenu ) && ! empty( $section['submenu'] ) ) {
+				continue;
+			}
+			$html .= sprintf( '<a href="#%1$s" class="nav-tab" id="%1$s-tab">%2$s</a>', $section['id'], $section['title'] );
 		}
 
 		$html .= '</h2>';
@@ -870,31 +909,38 @@ class SettingsApi {
 	 *
 	 * This function displays every sections in a different form.
 	 *
+	 * @param array $submenu
+	 *
 	 * @return void
 	 */
-	public function show_forms() {
+	public function show_forms( $submenu = [] ) {
 		$default = [
 			'label_submit' => null,
 			'submit_type'  => 'primary',
 			'wrap'         => true,
 			'attributes'   => null,
 		];
+
+		$sections = ! empty( $submenu ) ? $this->get_submenu_sections( $submenu ) : $this->sections_array;
 		?>
 
 		<div class="metabox-holder">
-			<?php foreach ( $this->sections_array as $form ) : ?>
+			<?php foreach ( $sections as $section ) : ?>
 				<?php
-				$form = wp_parse_args( $form, $default );
+					if ( empty( $submenu ) && ! empty( $section['submenu'] ) ) {
+						continue;
+					}
+					$section = wp_parse_args( $section, $default );
 				?>
 				<!-- style="display: none;" -->
-				<div id="<?php echo esc_attr( $form['id'] ); ?>" class="group" >
+				<div id="<?php echo esc_attr( $section['id'] ); ?>" class="group" >
 					<form method="post" action="<?php echo esc_url( admin_url( 'options.php' ) ); ?>">
 						<?php
-						do_action( 'eighteen73_form_top_' . $form['id'], $form );
-						settings_fields( $form['id'] );
-						do_settings_sections( $form['id'] );
-						do_action( 'eighteen73_form_bottom_' . $form['id'], $form );
-						submit_button( $form['label_submit'], $form['submit_type'], 'submit_' . $form['id'], $form['wrap'], $form['attributes'] );
+						do_action( 'eighteen73_form_top_' . $section['id'], $section );
+						settings_fields( $section['id'] );
+						do_settings_sections( $section['id'] );
+						do_action( 'eighteen73_form_bottom_' . $section['id'], $section );
+						submit_button( $section['label_submit'], $section['submit_type'], 'submit_' . $section['id'], $section['wrap'], $section['attributes'] );
 						?>
 					</form>
 				</div>
@@ -902,6 +948,52 @@ class SettingsApi {
 		</div>
 		<?php
 		$this->script();
+	}
+
+	/**
+	 * Get the current submenu.
+	 *
+	 * @return array
+	 */
+	public function get_current_submenu() {
+		$screen          = get_current_screen();
+		$current_submenu = [];
+
+		if ( empty( $this->submenus_array ) ) {
+			return $current_submenu;
+		}
+
+		foreach ( $this->submenus_array as $submenu ) {
+			$submenu_page_id = "{$screen->parent_base}_page_{$submenu['menu_slug']}";
+			if ( $screen->id == $submenu_page_id ) {
+				$current_submenu = $submenu;
+			}
+		}
+
+		return $current_submenu;
+	}
+
+	/**
+	 * Get a submenu sections.
+	 *
+	 * @param  array $submenu
+	 *
+	 * @return array
+	 */
+	public function get_submenu_sections( $submenu ) {
+		$sections = [];
+
+		if ( empty( $submenu ) ) {
+			return $sections;
+		}
+
+		foreach ( $this->sections_array as $section ) {
+			if ( isset( $section['submenu'] ) && $section['submenu'] == $submenu['menu_slug'] ) {
+				$sections[] = $section;
+			}
+		}
+
+		return $sections;
 	}
 
 	/**
